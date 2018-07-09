@@ -1,0 +1,98 @@
+---
+- hosts: all
+  tasks:
+    - name: test connectivity
+      tags: testing
+      ping:
+
+    - name: "install and update common packages"
+      tags: packages
+      apt:
+        name: "{{ packages }}"
+        state: latest
+      become: yes
+      vars:
+        packages:
+        - htop
+        - vim
+        - curl
+        - zsh
+        - git
+        - ncdu
+        - git
+
+    - name: "copy dotfiles"
+      tags: dotfiles
+      copy:
+        backup: yes
+        owner: "{{ansible_user_id}}"
+        group: "{{ansible_user_id}}"
+        mode: u=rw,g=r,o=
+        src: "templates/{{item}}"
+        dest: "{{ansible_env['HOME']}}/.{{item}}"
+      loop:
+        - vimrc
+        - gitconfig
+        - pushover.conf
+
+    - name: cleanup erroneous files
+      tags: cleanup
+      file:
+        state: absent
+        path: "{{ansible_env['HOME']}}/.pushover"
+
+    # consider replacing with authorized_key
+    - name: "add ssh keys"
+      tags: sshkeys
+      lineinfile:
+        path: "{{ansible_env['HOME']}}/.ssh/authorized_keys"
+        create: yes
+        backup: yes
+        owner: "{{ansible_user_id}}"
+        group: "{{ansible_user_id}}"
+        mode: u=rw,g=r,o=
+        state: present
+        line: "{{item}}"
+      loop:
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIri4TfiyNPfA5zCdrbafnoZAQat/QPhKkuIvVy/YmXA hildenae@nc-01539"
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyixZaDt23gfJlcAeQIjNAURaWVs6J7Q9xWK9NowNnd hildenae@grune.hild1.no"
+        - "ecdsa-sha2-nistp384 AAAAE2VjZHNhLXNoYTItbmlzdHAzODQAAAAIbmlzdHAzODQAAABhBHyP8Q0k2l0mtumAIlwmGAilUQTCGuntxBfTiiOnGZQI5PoNk6WpdOHwqlJZndp65Wl4w5kUyQi9dXzX/K6K+sGTtLHn3ftU92ZqCPEBe5Z0gZPRAvbpCKFVSx7HqT5jMg== JuiceSSH@6P"
+
+    - name: "add ssh know_hosts"
+      tags: sshkeys
+      lineinfile:
+        path: "{{ansible_env['HOME']}}/.ssh/known_hosts"
+        create: yes
+        backup: yes
+        owner: "{{ansible_user_id}}"
+        group: "{{ansible_user_id}}"
+        mode: u=rw,g=r,o=
+        state: present
+        line: "{{item}}"
+      loop:
+          - "github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ=="
+          - "[grune.hild1.no]:41722 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDeuouGpWxOkMsW/5MqPk4cCGLEl/UuQnjv7lxuBIoNIArxs02Aw2hZdSFjcJ1k8H5+akkd2kEm6uhQdyOOug0PpUND8KDckdJQlR+StoQ2s9O9SnDa2NZhq8/Vhut2YbWxxNc2bCjs/wwHsKWLb7qYt6B5dRc+sgkii9LxCanzbZAIDavqFuD6JCu0qTdotvHSTojZkbdoaZl0awY5aJIIxbZ2lQRZwfbCazYZvt2S5JbbYZdOX8DQCSs250WX069OXiPXAacT29+bLAXf+SipcAPWMDyeJfMKt6DNkFb3EDUmLg41wNsrVFWWWxcE+KGN47zTziSbXMSvfCr2Vsjv"
+          - "[grune.hild1.no]:41722 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBIXoTA7bwwg70PQrG0zLO7jvhobiWpc81c9zW2h2covUq2nfvPsu7u5+gAZ5D30uXpoMjCzBTGLz3VWwvNb/auI="
+
+    - name: 'Check that user has ed25519 SSH key. Add to github if new.'
+      tags: create_shhkeys
+      block:
+        - user:
+            name: "{{ansible_user_id}}"
+            generate_ssh_key: yes
+            ssh_key_type: ed25519
+            ssh_key_comment: "{{ansible_user_id}}@{{ansible_nodename}} - ansible auto generated"
+          register: user_key
+        - local_action:
+              # We run til as a local action so we only use the API from one IP
+              module: github_key
+              name: "{{ansible_user_id}}@{{ansible_nodename}}"
+              token: "{{ github_token_admin_public_key }}"
+              pubkey: '{{ user_key.ssh_public_key }}'
+          when: user_key.changed
+
+    - name: "checkout random-rantings"
+      tags: repos
+      git:
+        repo: "git@github.com:Kagee/random-rantings.git"
+        dest: "{{ansible_env['HOME']}}/bin/random-rantings"
