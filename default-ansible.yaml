@@ -6,11 +6,12 @@
       ping:
 
     - name: set composer_opts for dev env
+      tags: always
       set_fact:
         _has_gui: True
-       when: (ansible_form_factor == "Notebook") or
-             (ansible_form_factor == "Laptop") or
-             (ansible_form_factor == "Desktop")
+      when: (ansible_form_factor == "Notebook") or
+            (ansible_form_factor == "Laptop") or
+            (ansible_form_factor == "Desktop")
 
     - name: "install and update common packages"
       tags: packages
@@ -42,21 +43,21 @@
         - bless
         - meld
         - gedit
-      when: (ansible_form_factor == "Notebook") or
-            (ansible_form_factor == "Laptop") or
-            (ansible_form_factor == "Desktop")
+      when: _has_gui
 
-    - name: 'Install Google Chomre from the internet'
+    - name: 'Install Google Chomre from the internet and set as default'
       tags: chrome
-      apt:
-        deb: 'https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb'
+      block:
+        - apt:
+            deb: 'https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb'
+        - alternatives:
+            name: "{{ item.name }}"
+            path: "{{ item.path }}"
+          loop:
+            - { name: 'gnome-www-browser', path: '/usr/bin/google-chrome-stable' }
+            - { name: 'x-www-browser',     path: '/usr/bin/google-chrome-stable' }
       become: yes
-      when: (ansible_form_factor == "Notebook") or
-            (ansible_form_factor == "Laptop") or
-            (ansible_form_factor == "Desktop")
-
-    - name: 'Set google chrome as default system browser'
-        shell: echo -e "gnome-www-browser auto /usr/bin/google-chrome-stable\nx-www-browser auto /usr/bin/google-chrome-stable" | sudo update-alternatives --set-selections
+      when: _has_gui
 
     - name: "copy dotfiles"
       tags: dotfiles
