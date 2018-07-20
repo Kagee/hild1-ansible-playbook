@@ -5,6 +5,13 @@
       tags: testing
       ping:
 
+    - name: set composer_opts for dev env
+      set_fact:
+        _has_gui: True
+       when: (ansible_form_factor == "Notebook") or
+             (ansible_form_factor == "Laptop") or
+             (ansible_form_factor == "Desktop")
+
     - name: "install and update common packages"
       tags: packages
       apt:
@@ -20,6 +27,36 @@
         - git
         - ncdu
         - git
+
+
+    - name: "install and update notebook packages"
+      tags: packages
+      apt:
+        name: "{{ packages }}"
+        state: latest
+      become: yes
+      vars:
+        packages:
+        - guake
+        - git-cola
+        - bless
+        - meld
+        - gedit
+      when: (ansible_form_factor == "Notebook") or
+            (ansible_form_factor == "Laptop") or
+            (ansible_form_factor == "Desktop")
+
+    - name: 'Install Google Chomre from the internet'
+      tags: chrome
+      apt:
+        deb: 'https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb'
+      become: yes
+      when: (ansible_form_factor == "Notebook") or
+            (ansible_form_factor == "Laptop") or
+            (ansible_form_factor == "Desktop")
+
+    - name: 'Set google chrome as default system browser'
+        shell: echo -e "gnome-www-browser auto /usr/bin/google-chrome-stable\nx-www-browser auto /usr/bin/google-chrome-stable" | sudo update-alternatives --set-selections
 
     - name: "copy dotfiles"
       tags: dotfiles
@@ -52,14 +89,13 @@
         group: "{{ansible_user_id}}"
         mode: u=rw,g=r,o=
         state: present
-        line: "{{item}}"
-      loop:
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIri4TfiyNPfA5zCdrbafnoZAQat/QPhKkuIvVy/YmXA hildenae@nc-01539"
-        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyixZaDt23gfJlcAeQIjNAURaWVs6J7Q9xWK9NowNnd hildenae@grune.hild1.no"
-        - "ecdsa-sha2-nistp384 AAAAE2VjZHNhLXNoYTItbmlzdHAzODQAAAAIbmlzdHAzODQAAABhBHyP8Q0k2l0mtumAIlwmGAilUQTCGuntxBfTiiOnGZQI5PoNk6WpdOHwqlJZndp65Wl4w5kUyQi9dXzX/K6K+sGTtLHn3ftU92ZqCPEBe5Z0gZPRAvbpCKFVSx7HqT5jMg== JuiceSSH@6P"
+        line: "{{ item }}"
+      loop: "{{ query('lines', 'cat pubkeys.list') }}"
+      loop_control:
+          label: "{{ item.split(' ')[0] }} {{ item.split(' ')[2] }}"
 
     - name: "add ssh know_hosts"
-      tags: sshkeys
+      tags: hostkeys
       lineinfile:
         path: "{{ansible_env['HOME']}}/.ssh/known_hosts"
         create: yes
@@ -68,11 +104,10 @@
         group: "{{ansible_user_id}}"
         mode: u=rw,g=r,o=
         state: present
-        line: "{{item}}"
-      loop:
-          - "github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ=="
-          - "[grune.hild1.no]:41722 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDeuouGpWxOkMsW/5MqPk4cCGLEl/UuQnjv7lxuBIoNIArxs02Aw2hZdSFjcJ1k8H5+akkd2kEm6uhQdyOOug0PpUND8KDckdJQlR+StoQ2s9O9SnDa2NZhq8/Vhut2YbWxxNc2bCjs/wwHsKWLb7qYt6B5dRc+sgkii9LxCanzbZAIDavqFuD6JCu0qTdotvHSTojZkbdoaZl0awY5aJIIxbZ2lQRZwfbCazYZvt2S5JbbYZdOX8DQCSs250WX069OXiPXAacT29+bLAXf+SipcAPWMDyeJfMKt6DNkFb3EDUmLg41wNsrVFWWWxcE+KGN47zTziSbXMSvfCr2Vsjv"
-          - "[grune.hild1.no]:41722 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBIXoTA7bwwg70PQrG0zLO7jvhobiWpc81c9zW2h2covUq2nfvPsu7u5+gAZ5D30uXpoMjCzBTGLz3VWwvNb/auI="
+        line: "{{ item }}"
+      loop: "{{ query('lines', 'cat hostkeys.list') }}"
+      loop_control:
+          label: "{{ item.split(' ')[0:2] | join(' ') }}"
 
     - name: 'Check that user has ed25519 SSH key. Add to github if new.'
       tags: create_shhkeys
@@ -83,13 +118,14 @@
             ssh_key_type: ed25519
             ssh_key_comment: "{{ansible_user_id}}@{{ansible_nodename}} - ansible auto generated"
           register: user_key
-        - local_action:
-              # We run til as a local action so we only use the API from one IP
-              module: github_key
-              name: "{{ansible_user_id}}@{{ansible_nodename}}"
-              token: "{{ github_token_admin_public_key }}"
-              pubkey: '{{ user_key.ssh_public_key }}'
-          when: user_key.changed
+
+    - name: 'Upload ed25519 to Github'
+      local_action:
+        # We run til as a local action so we only use the API from one IP
+        module: github_key
+        name: "{{ansible_user_id}}@{{ansible_nodename}}"
+        token: "{{ github_token_admin_public_key }}"
+        pubkey: '{{ user_key.ssh_public_key }}'
 
     - name: "checkout random-rantings"
       tags: repos
