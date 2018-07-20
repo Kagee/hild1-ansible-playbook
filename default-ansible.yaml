@@ -8,8 +8,7 @@
     - name: set composer_opts for dev env
       tags: always
       set_fact:
-        _has_gui: True
-      when: (ansible_form_factor == "Notebook") or
+        _has_gui: (ansible_form_factor == "Notebook") or
             (ansible_form_factor == "Laptop") or
             (ansible_form_factor == "Desktop")
 
@@ -29,7 +28,6 @@
         - ncdu
         - git
 
-
     - name: "install and update notebook packages"
       tags: packages
       apt:
@@ -39,10 +37,19 @@
       vars:
         packages:
         - guake
+        - python-psutil
         - git-cola
         - bless
         - meld
         - gedit
+      when: _has_gui
+
+    - name: 'Set guake keybind'
+      tags: dconf
+      dconf:
+        key: "/apps/guake/keybindings/global/show-hide"
+        value: "'<Alt>bar'"
+        state: present
       when: _has_gui
 
     - name: 'Install Google Chomre from the internet and set as default'
@@ -56,6 +63,8 @@
           loop:
             - { name: 'gnome-www-browser', path: '/usr/bin/google-chrome-stable' }
             - { name: 'x-www-browser',     path: '/usr/bin/google-chrome-stable' }
+          loop_control:
+            label: "{{ item.name }} set to google-chrome-stable_"
       become: yes
       when: _has_gui
 
