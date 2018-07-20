@@ -3,3 +3,5 @@
     name = Anders Einar Hilden
 [cola]
     spellcheck = false
+[push]
+    default = matching
