@@ -27,6 +27,7 @@
         - git
         - ncdu
         - git
+        - mosh
 
     - name: "install and update notebook packages"
       tags: packages
