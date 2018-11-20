@@ -5,12 +5,20 @@
       tags: testing
       ping:
 
-    - name: set composer_opts for dev env
+    - name: Check if xorg is installed
+      command: dpkg-query -l xorg
+      ignore_errors: yes # don't error out if package not found
+      changed_when: False # don't report changes
+      register: xorg_check
+
+    - name: set _has_gui if xorg installed
       tags: always
       set_fact:
-        _has_gui: (ansible_form_factor == "Notebook") or
-            (ansible_form_factor == "Laptop") or
-            (ansible_form_factor == "Desktop")
+        _has_gui: xorg_check.rc == 0
+
+  #    - name: show them
+  #    tags: test
+  #    debug: var=xorg_check.rc
 
     - name: "install and update common packages"
       tags: packages
@@ -43,15 +51,16 @@
         - bless
         - meld
         - gedit
+        - terminator
       when: _has_gui
 
-    - name: 'Set guake keybind'
-      tags: dconf
-      dconf:
-        key: "/apps/guake/keybindings/global/show-hide"
-        value: "'<Alt>bar'"
-        state: present
-      when: _has_gui
+  #    - name: 'Set guake keybind'
+  #    tags: dconf
+  #    dconf:
+  #      key: "/apps/guake/keybindings/global/show-hide"
+  #      value: "'<Alt>bar'"
+  #      state: present
+  #    when: _has_gui
 
     - name: 'Install Google Chomre from the internet and set as default'
       tags: chrome
@@ -65,7 +74,7 @@
             - { name: 'gnome-www-browser', path: '/usr/bin/google-chrome-stable' }
             - { name: 'x-www-browser',     path: '/usr/bin/google-chrome-stable' }
           loop_control:
-            label: "{{ item.name }} set to google-chrome-stable_"
+            label: "{{ item.name }} set to google-chrome-stable"
       become: yes
       when: _has_gui
 
