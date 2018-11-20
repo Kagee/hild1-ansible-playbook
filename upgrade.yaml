@@ -1,0 +1,103 @@
+---
+#
+# Install package updates
+# Taken from https://www.redpill-linpro.com/sysadvent/2017/12/24/ansible-system-updates.html
+- name: upgrade packages and reboot (if necessary)
+  hosts: all
+  become: true
+  serial: 1 # one host at a time
+  any_errors_fatal: true
+  max_fail_percentage: 0
+  tasks: # tasks are done in order
+
+    # do an "apt-get update", to ensure latest package lists
+    - name: apt-get update
+      apt:
+        update-cache: yes
+      changed_when: 0
+
+    # get a list of packages that have updates
+    - name: get list of pending upgrades
+      command: apt-get --simulate dist-upgrade
+      args:
+        warn: false # don't warn us about apt having its own plugin
+      register: apt_simulate
+      changed_when: 0
+
+    # pick out list of pending updates from command output
+    - name: parse apt-get output to get list of changed packages
+      set_fact:
+        updates: '{{ apt_simulate.stdout_lines | select("match", "^Inst ") | list | splitpart(1, " ") | list | sort }}'
+      changed_when: 0
+
+    # tell user about packages being updated
+    - name: show pending updates
+      debug:
+        var: updates
+      when: updates.0 is defined
+
+    # comment this part in if you want to manually ack each webserver update
+    - pause:
+      when: updates.0 is defined
+
+    # if a new kernel is incoming, remove old ones to avoid full /boot
+    - name: apt-get autoremove
+      command: apt-get -y autoremove
+      args:
+        warn: false
+      when: '"Inst linux-image-" in apt_simulate.stdout'
+      changed_when: 0
+
+    # do the actual apt-get dist-upgrade
+    - name: apt-get dist-upgrade
+      apt:
+        upgrade: dist # upgrade all packages to latest version
+      register: upgrade_output
+
+    # check if we need a reboot
+    - name: check if reboot needed
+      stat: path=/var/run/reboot-required
+      register: file_reboot_required
+
+    # "meta: end_play" aborts the rest of the tasks in the current «tasks:»
+    # section, for the current webserver
+    # "when:" clause ensures that the "meta: end_play" only triggers if the
+    # current webserver does _not_ need a reboot
+    - meta: end_play
+      when: not file_reboot_required.stat.exists
+
+    # because of the above meta/when we at this point know that the current
+    # host needs a reboot
+
+    # prompt for manual input before doing the actual reboot
+    - name: Confirm reboot of {{ inventory_hostname }}
+      pause:
+
+    - name: reboot node
+      shell: sleep 2 && shutdown -r now "Reboot triggered by ansible"
+      async: 1
+      poll: 0
+      ignore_errors: true
+
+    # poll ssh port until we get a tcp connect
+    - name: wait for node to finish booting
+      become: false
+      local_action: wait_for host={{ ansible_ssh_host }}
+          port=41722
+          state=started
+          delay=5
+          timeout=600
+
+    # give sshd time to start fully
+    - name: wait for ssh to start fully
+      pause:
+        seconds: 15
+
+    # wait a few minutes between hosts, unless we're on the last
+    - name: waiting between hosts
+      pause:
+        seconds: 15
+      when: inventory_hostname != ansible_play_hosts[-1]
+
+
+
